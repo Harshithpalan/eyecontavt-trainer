@@ -1,0 +1,1233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FOCAL — Eye Contact Trainer</title>
+<script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=JetBrains+Mono:wght@300;400;500;700&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:       #08090f;
+  --panel:    #0d0e18;
+  --surface:  #12131f;
+  --border:   #1c1e32;
+  --border2:  #272a45;
+
+  --amber:    #f5a623;
+  --amber-d:  #7a4f0a;
+  --amber-bg: rgba(245,166,35,0.07);
+  --green:    #22d47a;
+  --green-bg: rgba(34,212,122,0.07);
+  --red:      #f53d3d;
+  --red-bg:   rgba(245,61,61,0.07);
+  --blue:     #4a9eff;
+
+  --text:     #dde0f0;
+  --muted:    #484c6e;
+  --dim:      #1a1c30;
+}
+
+html, body { height: 100%; overflow: hidden; background: var(--bg); }
+
+body {
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text);
+  display: grid;
+  grid-template-rows: 52px 1fr;
+  height: 100vh;
+}
+
+/* ── Star-field bg ──────────────────────────────────── */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image:
+    radial-gradient(1px 1px at 15% 25%, rgba(255,255,255,0.25) 0%, transparent 100%),
+    radial-gradient(1px 1px at 72% 14%, rgba(255,255,255,0.18) 0%, transparent 100%),
+    radial-gradient(1px 1px at 41% 63%, rgba(255,255,255,0.2)  0%, transparent 100%),
+    radial-gradient(1px 1px at 88% 47%, rgba(255,255,255,0.15) 0%, transparent 100%),
+    radial-gradient(1px 1px at 6%  81%, rgba(255,255,255,0.22) 0%, transparent 100%),
+    radial-gradient(1px 1px at 55% 88%, rgba(255,255,255,0.12) 0%, transparent 100%),
+    radial-gradient(1px 1px at 93% 72%, rgba(255,255,255,0.2)  0%, transparent 100%),
+    radial-gradient(1px 1px at 28% 42%, rgba(255,255,255,0.14) 0%, transparent 100%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── HEADER ─────────────────────────────────────────── */
+header {
+  position: relative; z-index: 50;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 1.8rem;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border2);
+}
+
+.brand {
+  display: flex; align-items: baseline; gap: 10px;
+}
+.brand-name {
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  font-size: 1.4rem;
+  letter-spacing: 0.2em;
+  color: var(--amber);
+  text-shadow: 0 0 30px rgba(245,166,35,0.5);
+}
+.brand-sep { color: var(--border2); font-size: 0.7rem; }
+.brand-sub {
+  font-size: 0.48rem;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.header-right {
+  display: flex; align-items: center; gap: 12px;
+}
+
+.hchip {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 0.48rem; letter-spacing: 0.18em; text-transform: uppercase;
+  border: 1px solid var(--border2); padding: 4px 12px; border-radius: 1px;
+  color: var(--muted); transition: all 0.3s;
+}
+.hchip .d { width: 5px; height: 5px; border-radius: 50%; background: var(--muted); transition: all 0.3s; }
+.hchip.live { color: var(--green); border-color: rgba(34,212,122,0.3); }
+.hchip.live .d { background: var(--green); box-shadow: 0 0 8px var(--green); animation: blink 1.3s ease-in-out infinite; }
+@keyframes blink { 0%,100%{opacity:1}50%{opacity:0.2} }
+
+/* ── MAIN LAYOUT ────────────────────────────────────── */
+.app {
+  position: relative; z-index: 1;
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  overflow: hidden;
+}
+
+/* ── LEFT: CAMERA + OVERLAY ─────────────────────────── */
+.cam-section {
+  position: relative;
+  display: flex; flex-direction: column;
+  background: #000;
+  overflow: hidden;
+  border-right: 1px solid var(--border2);
+}
+
+video { display: none; }
+
+canvas#cam-feed {
+  flex: 1;
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+  transform: scaleX(-1);
+  filter: brightness(0.75) saturate(0.5);
+}
+
+canvas#eye-overlay {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  transform: scaleX(-1);
+}
+
+/* Crosshair center target */
+.center-target {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 60px; height: 60px;
+  pointer-events: none;
+  z-index: 5;
+}
+.center-target::before, .center-target::after {
+  content: ''; position: absolute;
+  background: rgba(245,166,35,0.6);
+}
+.center-target::before { top: 50%; left: 0; right: 0; height: 1px; }
+.center-target::after  { left: 50%; top: 0; bottom: 0; width: 1px; }
+
+.target-ring {
+  position: absolute; inset: 0;
+  border: 1px solid rgba(245,166,35,0.3);
+  border-radius: 50%;
+  animation: ring-pulse 2s ease-in-out infinite;
+}
+.target-ring-outer {
+  position: absolute;
+  inset: -16px;
+  border: 1px solid rgba(245,166,35,0.12);
+  border-radius: 50%;
+}
+
+@keyframes ring-pulse {
+  0%,100% { transform: scale(1);   opacity: 0.5; }
+  50%      { transform: scale(1.1); opacity: 0.9; }
+}
+
+/* GOOD / BAD overlay flash */
+.contact-flash {
+  position: absolute; inset: 0;
+  pointer-events: none; z-index: 4;
+  border: 3px solid transparent;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.contact-flash.good { border-color: rgba(34,212,122,0.5); box-shadow: inset 0 0 40px rgba(34,212,122,0.1); }
+.contact-flash.bad  { border-color: rgba(245,61,61,0.4);  box-shadow: inset 0 0 40px rgba(245,61,61,0.08); }
+
+/* HUD labels */
+.hud {
+  position: absolute; z-index: 6; pointer-events: none;
+  font-size: 0.44rem; letter-spacing: 0.2em; text-transform: uppercase;
+  color: rgba(245,166,35,0.35);
+}
+.hud.tl { top: 14px; left: 16px; }
+.hud.tr { top: 14px; right: 16px; text-align: right; }
+.hud.bl { bottom: 14px; left: 16px; }
+
+/* Score ring overlay on camera */
+.cam-score-wrap {
+  position: absolute;
+  top: 18px; left: 50%;
+  transform: translateX(-50%);
+  z-index: 6; pointer-events: none;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+}
+.cam-score-svg { width: 72px; height: 72px; }
+.cam-score-num {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Syne', sans-serif; font-weight: 800;
+  font-size: 1.5rem; color: white;
+}
+.cam-score-lbl {
+  font-size: 0.42rem; letter-spacing: 0.2em; text-transform: uppercase;
+  color: rgba(245,166,35,0.4);
+}
+
+/* Gaze vector arrow */
+.gaze-status {
+  position: absolute;
+  bottom: 60px; left: 50%;
+  transform: translateX(-50%);
+  z-index: 6; pointer-events: none;
+  font-size: 0.52rem; letter-spacing: 0.2em; text-transform: uppercase;
+  padding: 6px 18px;
+  border-radius: 1px;
+  backdrop-filter: blur(8px);
+  opacity: 0;
+  transition: opacity 0.3s, background 0.3s, color 0.3s;
+  white-space: nowrap;
+}
+.gaze-status.show { opacity: 1; }
+.gaze-status.good { background: rgba(34,212,122,0.2); color: var(--green); border: 1px solid rgba(34,212,122,0.3); }
+.gaze-status.bad  { background: rgba(245,61,61,0.2);  color: var(--red);   border: 1px solid rgba(245,61,61,0.3); }
+.gaze-status.warn { background: rgba(245,166,35,0.15); color: var(--amber); border: 1px solid rgba(245,166,35,0.3); }
+
+/* Drill mode countdown */
+.drill-overlay {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 8; pointer-events: none;
+  opacity: 0; transition: opacity 0.3s;
+}
+.drill-overlay.show { opacity: 1; }
+.drill-countdown {
+  font-family: 'Syne', sans-serif; font-weight: 800;
+  font-size: clamp(3rem, 10vw, 6rem);
+  color: var(--amber);
+  text-shadow: 0 0 60px rgba(245,166,35,0.6);
+  animation: count-pulse 1s ease-out;
+}
+@keyframes count-pulse { 0%{transform:scale(1.5);opacity:0} 100%{transform:scale(1);opacity:1} }
+
+/* Loading */
+#loading {
+  position: absolute; inset: 0;
+  background: var(--bg);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 1.4rem; z-index: 30;
+  transition: opacity 0.7s;
+}
+#loading.gone { opacity: 0; pointer-events: none; }
+
+.load-brand {
+  font-family: 'Syne', sans-serif; font-weight: 800;
+  font-size: 3rem; letter-spacing: 0.25em;
+  color: var(--amber);
+  text-shadow: 0 0 40px rgba(245,166,35,0.5);
+  animation: ambient 2.5s ease-in-out infinite;
+}
+@keyframes ambient { 0%,100%{text-shadow:0 0 40px rgba(245,166,35,0.5)} 50%{text-shadow:0 0 70px rgba(245,166,35,0.8)} }
+
+.load-msg { font-size: 0.52rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); }
+.load-bar { width: 220px; height: 1px; background: var(--border2); overflow: hidden; }
+.load-fill { height: 100%; background: var(--amber); width: 0%; animation: lf 2.5s ease forwards; box-shadow: 0 0 8px var(--amber); }
+@keyframes lf { to { width: 100%; } }
+
+/* No face */
+.no-face {
+  position: absolute; inset: 0; z-index: 5; pointer-events: none;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; transition: opacity 0.4s;
+}
+.no-face.show { opacity: 1; }
+.no-face-inner {
+  font-family: 'Syne', sans-serif; font-size: 1rem; font-weight: 400;
+  color: rgba(245,166,35,0.28); text-align: center; line-height: 1.8;
+  letter-spacing: 0.05em;
+}
+
+/* ── RIGHT PANEL ─────────────────────────────────────── */
+.panel {
+  display: flex; flex-direction: column;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.psec {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.psec-lbl {
+  font-size: 0.46rem; letter-spacing: 0.25em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 0.9rem;
+  display: flex; align-items: center; gap: 8px;
+}
+.psec-lbl::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+/* Big live score */
+.score-area {
+  display: flex; align-items: center; gap: 1rem;
+}
+
+.score-ring-wrap {
+  position: relative; width: 88px; height: 88px; flex-shrink: 0;
+}
+.score-ring-wrap svg { width: 88px; height: 88px; transform: rotate(-90deg); }
+.score-ring-num {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Syne', sans-serif; font-weight: 800;
+  font-size: 1.8rem; color: var(--text);
+  transition: color 0.3s;
+}
+
+.score-right { flex: 1; }
+.score-label {
+  font-family: 'Syne', sans-serif;
+  font-size: 0.95rem; font-weight: 700; letter-spacing: 0.04em;
+  color: var(--text); margin-bottom: 4px;
+  transition: color 0.3s;
+}
+.score-desc {
+  font-size: 0.52rem; letter-spacing: 0.08em;
+  color: var(--muted); line-height: 1.6;
+}
+
+/* Session streak */
+.streak-row {
+  display: flex; align-items: center; gap: 8px; margin-top: 10px;
+}
+.streak-bar-track {
+  flex: 1; height: 3px; background: var(--dim); border-radius: 2px; overflow: hidden;
+}
+.streak-bar-fill {
+  height: 100%; background: var(--green);
+  border-radius: 2px; width: 0%;
+  transition: width 0.3s ease, background 0.3s;
+  box-shadow: 0 0 6px var(--green);
+}
+.streak-val {
+  font-size: 0.52rem; letter-spacing: 0.1em;
+  color: var(--green); min-width: 36px; text-align: right;
+  transition: color 0.3s;
+}
+
+/* Gaze meters */
+.gaze-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+.gaze-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 10px 12px;
+}
+.gaze-card-lbl { font-size: 0.44rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); margin-bottom: 5px; }
+.gaze-card-val {
+  font-family: 'Syne', sans-serif; font-weight: 700;
+  font-size: 1.2rem; color: var(--text);
+  transition: color 0.2s;
+}
+.gaze-card-bar { height: 2px; background: var(--dim); border-radius: 1px; overflow: hidden; margin-top: 6px; }
+.gaze-card-fill { height: 100%; background: var(--amber); border-radius: 1px; width: 50%; transition: width 0.15s; }
+
+/* Drill controls */
+.drill-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+
+.drill-btn {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.48rem; letter-spacing: 0.12em; text-transform: uppercase;
+  border: 1px solid var(--border2); background: transparent;
+  color: var(--muted); padding: 8px 10px; border-radius: 1px;
+  cursor: pointer; transition: all 0.15s; text-align: left;
+  display: flex; flex-direction: column; gap: 3px;
+}
+.drill-btn:hover { border-color: var(--amber); color: var(--amber); background: var(--amber-bg); }
+.drill-btn.active { border-color: var(--amber); color: var(--amber); background: var(--amber-bg); }
+.drill-btn .db-name { font-size: 0.52rem; font-weight: 500; }
+.drill-btn .db-sub  { font-size: 0.42rem; color: var(--muted); }
+.drill-btn.active .db-sub { color: var(--amber-d); }
+
+/* Settings sliders */
+.sl-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.sl-row:last-child { margin-bottom: 0; }
+.sl-head { display: flex; justify-content: space-between; }
+.sl-name { font-size: 0.48rem; letter-spacing: 0.1em; color: var(--text); }
+.sl-val  { font-size: 0.48rem; letter-spacing: 0.06em; color: var(--amber); }
+input[type=range] {
+  -webkit-appearance: none;
+  width: 100%; height: 1px;
+  background: var(--border2); outline: none;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 11px; height: 11px;
+  background: var(--amber); border-radius: 50%; cursor: pointer;
+  box-shadow: 0 0 6px var(--amber);
+}
+
+/* Session stats */
+.stat-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 6px; }
+.stat-box {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 2px; padding: 8px 10px;
+}
+.stat-box-lbl { font-size: 0.42rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
+.stat-box-val {
+  font-family: 'Syne', sans-serif; font-weight: 700;
+  font-size: 1.1rem; color: var(--amber); margin-top: 2px;
+  transition: color 0.3s;
+}
+
+/* History sparkline */
+.spark-wrap { height: 44px; position: relative; }
+canvas#spark-canvas { width: 100%; height: 44px; display: block; }
+
+/* Coach message */
+.coach-msg {
+  flex: 1;
+  padding: 1rem 1.25rem;
+  display: flex; flex-direction: column; gap: 6px;
+  overflow-y: auto; min-height: 0;
+}
+.coach-msg::-webkit-scrollbar { width: 2px; }
+.coach-msg::-webkit-scrollbar-thumb { background: var(--border2); }
+
+.msg-lbl { font-size: 0.46rem; letter-spacing: 0.25em; text-transform: uppercase; color: var(--muted); margin-bottom: 2px; }
+
+.msg-item {
+  display: flex; gap: 10px; padding: 7px 10px;
+  border: 1px solid transparent; border-radius: 2px;
+  font-size: 0.6rem; letter-spacing: 0.04em; line-height: 1.5;
+  animation: msg-in 0.3s ease;
+}
+@keyframes msg-in { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:none} }
+
+.msg-item.good { background: var(--green-bg); border-color: rgba(34,212,122,0.15); color: var(--green); }
+.msg-item.warn { background: var(--amber-bg); border-color: rgba(245,166,35,0.15); color: var(--amber); }
+.msg-item.bad  { background: var(--red-bg);   border-color: rgba(245,61,61,0.15);  color: var(--red); }
+.msg-item .mi-icon { flex-shrink: 0; }
+.msg-item .mi-text { color: var(--text); }
+
+.no-msgs { font-size: 0.55rem; font-style: italic; color: var(--muted); padding: 0.5rem 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="brand-name">FOCAL</div>
+    <div class="brand-sep">|</div>
+    <div class="brand-sub">Eye Contact Training System</div>
+  </div>
+  <div class="header-right">
+    <div class="hchip" id="chip-cam"><div class="d"></div><span id="chip-cam-txt">Offline</span></div>
+    <div class="hchip" id="chip-face"><div class="d"></div><span id="chip-face-txt">No Face</span></div>
+    <div class="hchip" id="chip-score"><div class="d"></div><span id="chip-score-txt">Score: —</span></div>
+  </div>
+</header>
+
+<div class="app">
+
+  <!-- Camera section -->
+  <div class="cam-section" id="cam-section">
+    <video id="video" autoplay muted playsinline></video>
+    <canvas id="cam-feed"></canvas>
+    <canvas id="eye-overlay"></canvas>
+
+    <div class="center-target">
+      <div class="target-ring"></div>
+      <div class="target-ring-outer"></div>
+    </div>
+
+    <div class="contact-flash" id="contact-flash"></div>
+    <div class="hud tl" id="hud-tl">FOCAL · EYE TRACKER</div>
+    <div class="hud tr" id="hud-tr">FPS: —</div>
+    <div class="hud bl" id="hud-bl">GAZE DETECTION ACTIVE</div>
+
+    <!-- Live score ring on cam -->
+    <div class="cam-score-wrap">
+      <div style="position:relative">
+        <svg class="cam-score-svg" viewBox="0 0 72 72" id="cam-ring-svg">
+          <circle cx="36" cy="36" r="30" stroke="rgba(255,255,255,0.08)" stroke-width="4" fill="none"/>
+          <circle cx="36" cy="36" r="30" stroke="#f5a623" stroke-width="4" fill="none"
+            stroke-dasharray="188.5" stroke-dashoffset="188.5"
+            id="cam-ring-arc" stroke-linecap="round"
+            style="transition:stroke-dashoffset 0.4s,stroke 0.4s"/>
+        </svg>
+        <div class="cam-score-num" id="cam-score-num">—</div>
+      </div>
+    </div>
+
+    <div class="gaze-status" id="gaze-status">Looking good</div>
+    <div class="drill-overlay" id="drill-overlay"><div class="drill-countdown" id="drill-count">3</div></div>
+    <div class="no-face show" id="no-face"><div class="no-face-inner">Position yourself<br>so your face is visible</div></div>
+
+    <div id="loading">
+      <div class="load-brand">FOCAL</div>
+      <div class="load-msg" id="load-msg">Initialising AI models…</div>
+      <div class="load-bar"><div class="load-fill"></div></div>
+    </div>
+  </div>
+
+  <!-- Right panel -->
+  <div class="panel">
+
+    <!-- Live score -->
+    <div class="psec">
+      <div class="psec-lbl">Live Score</div>
+      <div class="score-area">
+        <div class="score-ring-wrap">
+          <svg viewBox="0 0 88 88" id="ring-svg">
+            <circle cx="44" cy="44" r="38" stroke="var(--border2)" stroke-width="5" fill="none"/>
+            <circle cx="44" cy="44" r="38" stroke="var(--amber)" stroke-width="5" fill="none"
+              stroke-dasharray="238.8" stroke-dashoffset="238.8"
+              id="ring-arc" stroke-linecap="round"
+              style="transition:stroke-dashoffset 0.4s,stroke 0.4s"/>
+          </svg>
+          <div class="score-ring-num" id="ring-num">—</div>
+        </div>
+        <div class="score-right">
+          <div class="score-label" id="score-label">Awaiting session</div>
+          <div class="score-desc" id="score-desc">Look directly at the camera lens to begin training</div>
+          <div class="streak-row">
+            <div class="streak-bar-track"><div class="streak-bar-fill" id="streak-fill"></div></div>
+            <div class="streak-val" id="streak-val">0s</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Gaze meters -->
+    <div class="psec">
+      <div class="psec-lbl">Gaze Vector</div>
+      <div class="gaze-grid">
+        <div class="gaze-card">
+          <div class="gaze-card-lbl">Horizontal</div>
+          <div class="gaze-card-val" id="gv-h">0.00</div>
+          <div class="gaze-card-bar"><div class="gaze-card-fill" id="gv-h-bar" style="background:var(--blue)"></div></div>
+        </div>
+        <div class="gaze-card">
+          <div class="gaze-card-lbl">Vertical</div>
+          <div class="gaze-card-val" id="gv-v">0.00</div>
+          <div class="gaze-card-bar"><div class="gaze-card-fill" id="gv-v-bar" style="background:var(--blue)"></div></div>
+        </div>
+        <div class="gaze-card">
+          <div class="gaze-card-lbl">Pupil Ratio L</div>
+          <div class="gaze-card-val" id="gv-pl">—</div>
+          <div class="gaze-card-bar"><div class="gaze-card-fill" id="gv-pl-bar"></div></div>
+        </div>
+        <div class="gaze-card">
+          <div class="gaze-card-lbl">Pupil Ratio R</div>
+          <div class="gaze-card-val" id="gv-pr">—</div>
+          <div class="gaze-card-bar"><div class="gaze-card-fill" id="gv-pr-bar"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Drill modes -->
+    <div class="psec">
+      <div class="psec-lbl">Drill Mode</div>
+      <div class="drill-grid" id="drill-grid">
+        <button class="drill-btn active" data-drill="free">
+          <span class="db-name">Free Practice</span>
+          <span class="db-sub">Continuous training</span>
+        </button>
+        <button class="drill-btn" data-drill="30">
+          <span class="db-name">30-Second</span>
+          <span class="db-sub">Short burst</span>
+        </button>
+        <button class="drill-btn" data-drill="60">
+          <span class="db-name">60-Second</span>
+          <span class="db-sub">Standard drill</span>
+        </button>
+        <button class="drill-btn" data-drill="120">
+          <span class="db-name">2-Minute</span>
+          <span class="db-sub">Presentation sim</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Settings -->
+    <div class="psec">
+      <div class="psec-lbl">Sensitivity</div>
+      <div class="sl-row">
+        <div class="sl-head"><span class="sl-name">Gaze tolerance</span><span class="sl-val" id="sv-tol">35</span></div>
+        <input type="range" id="sl-tol" min="10" max="80" value="35">
+      </div>
+      <div class="sl-row">
+        <div class="sl-head"><span class="sl-name">Score smoothing</span><span class="sl-val" id="sv-sm">60</span></div>
+        <input type="range" id="sl-sm" min="0" max="90" value="60">
+      </div>
+    </div>
+
+    <!-- Session stats -->
+    <div class="psec">
+      <div class="psec-lbl">Session Stats</div>
+      <div class="stat-grid">
+        <div class="stat-box"><div class="stat-box-lbl">Avg Score</div><div class="stat-box-val" id="ss-avg">—</div></div>
+        <div class="stat-box"><div class="stat-box-lbl">Best Streak</div><div class="stat-box-val" id="ss-streak">0s</div></div>
+        <div class="stat-box"><div class="stat-box-lbl">Contact %</div><div class="stat-box-val" id="ss-pct">0%</div></div>
+      </div>
+      <div class="spark-wrap" style="margin-top:8px">
+        <canvas id="spark-canvas"></canvas>
+      </div>
+    </div>
+
+    <!-- Coach messages -->
+    <div class="coach-msg">
+      <div class="msg-lbl">Coach Feedback</div>
+      <div id="msg-list"><div class="no-msgs">Start training to receive feedback</div></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════════════════
+const cfg = {
+  tolerance: 35,   // px: how far pupil centre can deviate from iris centre
+  smoothing: 60,   // score smoothing factor %
+  drill: 'free',
+};
+
+const gaze = {
+  hRaw: 0, vRaw: 0,        // raw gaze offsets (-1..1)
+  hSmooth: 0, vSmooth: 0,  // smoothed
+  plRatio: 0.5, prRatio: 0.5,
+  contact: false,
+  score: 0,
+  scoreSmooth: 0,
+};
+
+const session = {
+  start: Date.now(),
+  scoreSum: 0,
+  scoreCount: 0,
+  contactFrames: 0,
+  totalFrames: 0,
+  streak: 0,
+  bestStreak: 0,
+  drillActive: false,
+  drillSec: 0,
+  drillTimer: null,
+  history: [],  // up to 120 score values
+};
+
+const perf = { fps: 0, frames: 0, last: performance.now() };
+
+// ══════════════════════════════════════════════════════════
+// ELEMENTS
+// ══════════════════════════════════════════════════════════
+const video    = document.getElementById('video');
+const camCvs   = document.getElementById('cam-feed');
+const eyeOvl   = document.getElementById('eye-overlay');
+const sparkCvs = document.getElementById('spark-canvas');
+const cCtx     = camCvs.getContext('2d');
+const eCtx     = eyeOvl.getContext('2d');
+const spkCtx   = sparkCvs.getContext('2d');
+
+// ══════════════════════════════════════════════════════════
+// FACE-API INIT
+// ══════════════════════════════════════════════════════════
+const MODEL_URL = 'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/weights';
+let lastDet = null;
+let detFrame = 0;
+
+async function initFaceApi() {
+  document.getElementById('load-msg').textContent = 'Loading face detector…';
+  await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+  document.getElementById('load-msg').textContent = 'Loading 68-pt landmarks…';
+  await faceapi.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URL);
+}
+
+async function startCamera() {
+  document.getElementById('load-msg').textContent = 'Requesting camera…';
+  const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 } });
+  video.srcObject = stream;
+  await new Promise(r => video.onloadedmetadata = r);
+  video.play();
+  camCvs.width  = eyeOvl.width  = video.videoWidth;
+  camCvs.height = eyeOvl.height = video.videoHeight;
+}
+
+// ══════════════════════════════════════════════════════════
+// DETECTION LOOP
+// ══════════════════════════════════════════════════════════
+let firstResult = true;
+
+async function detLoop() {
+  requestAnimationFrame(detLoop);
+
+  // FPS
+  perf.frames++;
+  const now = performance.now();
+  if (now - perf.last >= 1000) {
+    perf.fps = perf.frames; perf.frames = 0; perf.last = now;
+    document.getElementById('hud-tr').textContent = `FPS: ${perf.fps}`;
+  }
+
+  if (video.readyState < 2) return;
+
+  // Draw cam feed (mirrored via CSS)
+  cCtx.save();
+  cCtx.translate(camCvs.width, 0); cCtx.scale(-1, 1);
+  cCtx.drawImage(video, 0, 0, camCvs.width, camCvs.height);
+  cCtx.restore();
+
+  // Detect every 2 frames for perf
+  detFrame++;
+  if (detFrame % 2 === 0) {
+    lastDet = await faceapi
+      .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.4 }))
+      .withFaceLandmarks(true);
+  }
+
+  eCtx.clearRect(0, 0, eyeOvl.width, eyeOvl.height);
+
+  if (!lastDet) {
+    document.getElementById('no-face').classList.add('show');
+    document.getElementById('chip-face').classList.remove('live');
+    document.getElementById('chip-face-txt').textContent = 'No Face';
+    gaze.contact = false;
+    updateScoreUI(0);
+    return;
+  }
+
+  if (firstResult) {
+    firstResult = false;
+    document.getElementById('loading').classList.add('gone');
+    document.getElementById('chip-cam').classList.add('live');
+    document.getElementById('chip-cam-txt').textContent = 'Live';
+  }
+
+  document.getElementById('no-face').classList.remove('show');
+  document.getElementById('chip-face').classList.add('live');
+  document.getElementById('chip-face-txt').textContent = 'Tracking';
+
+  const pts = lastDet.landmarks.positions;
+  const W = eyeOvl.width;
+
+  // Mirror landmark X coords (canvas CSS-mirrored)
+  const m = i => ({ x: W - pts[i].x, y: pts[i].y });
+
+  // ── Gaze estimation using iris relative position ──────
+  // Left eye: landmarks 36–41, right eye: 42–47
+  const gazeResult = estimateGaze(pts, W);
+  gaze.hRaw = gazeResult.h;
+  gaze.vRaw = gazeResult.v;
+  gaze.plRatio = gazeResult.leftRatio;
+  gaze.prRatio = gazeResult.rightRatio;
+
+  // Smooth gaze
+  const sf = 0.35;
+  gaze.hSmooth = gaze.hSmooth * (1-sf) + gaze.hRaw * sf;
+  gaze.vSmooth = gaze.vSmooth * (1-sf) + gaze.vRaw * sf;
+
+  // Score: how centred is the gaze? (0–100)
+  const tol = cfg.tolerance / 100;
+  const hOff = Math.abs(gaze.hSmooth);
+  const vOff = Math.abs(gaze.vSmooth);
+  const maxOff = Math.hypot(hOff, vOff);
+  const rawScore = Math.max(0, Math.min(100, (1 - maxOff / (tol * 2)) * 100));
+
+  const scoreSF = cfg.smoothing / 100;
+  gaze.scoreSmooth = gaze.scoreSmooth * scoreSF + rawScore * (1 - scoreSF);
+  gaze.score = Math.round(gaze.scoreSmooth);
+  gaze.contact = gaze.score >= 60;
+
+  // Draw eye overlays
+  drawEyeOverlay(pts, W, gazeResult);
+
+  // Update all UI
+  updateScoreUI(gaze.score);
+  updateGazeMeters(gazeResult);
+  updateSession();
+}
+
+// ══════════════════════════════════════════════════════════
+// GAZE ESTIMATION
+// Approach: for each eye, find the iris-centre approximation
+// using the average of inner/outer/top/bottom landmarks,
+// then compute pupil offset relative to eye bounding box.
+// ══════════════════════════════════════════════════════════
+function estimateGaze(pts, W) {
+  // Left eye: 36(outer) 37 38 39(inner) 40 41
+  // Right eye: 42(inner) 43 44 45(outer) 46 47
+
+  function eyeGaze(idxs) {
+    // Bounding box of eye
+    const xs = idxs.map(i => pts[i].x);
+    const ys = idxs.map(i => pts[i].y);
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    const eyeW = maxX - minX;
+    const eyeH = maxY - minY;
+
+    // Approximate iris center: use eye corner midpoint offset by visible iris
+    // Use top-2 and bottom-2 of the 6 pts to get the vertical eye open height
+    // Iris approximation: centre of the 6 eye landmarks
+    const irisX = xs.reduce((a,b)=>a+b,0) / xs.length;
+    const irisY = ys.reduce((a,b)=>a+b,0) / ys.length;
+
+    // Offset from centre as ratio of eye size
+    const hOffset = eyeW > 0 ? (irisX - centerX) / (eyeW * 0.5) : 0;
+    const vOffset = eyeH > 0 ? (irisY - centerY) / (eyeH * 0.5) : 0;
+
+    // Pupil position ratio (0=left, 1=right)
+    const ratio = eyeW > 0 ? (irisX - minX) / eyeW : 0.5;
+
+    return { hOffset, vOffset, ratio, centerX, centerY, eyeW, eyeH, irisX, irisY, minX, minY, maxX, maxY };
+  }
+
+  const leftEye  = eyeGaze([36,37,38,39,40,41]);
+  const rightEye = eyeGaze([42,43,44,45,46,47]);
+
+  // Head pose adjustment via nose bridge
+  const noseBridge = pts[27]; // top of nose
+  const noseBase   = pts[33]; // bottom of nose
+  const leftEyeCenter  = { x: (pts[36].x+pts[39].x)/2, y: (pts[36].y+pts[39].y)/2 };
+  const rightEyeCenter = { x: (pts[42].x+pts[45].x)/2, y: (pts[42].y+pts[45].y)/2 };
+  const interEyeDist   = Math.abs(rightEyeCenter.x - leftEyeCenter.x);
+  const noseDevH = interEyeDist > 0 ? (noseBridge.x - (leftEyeCenter.x+rightEyeCenter.x)/2) / interEyeDist : 0;
+
+  // Average horizontal gaze with head-pose correction
+  const avgH = ((leftEye.hOffset + rightEye.hOffset) / 2) - noseDevH * 0.5;
+  const avgV = (leftEye.vOffset + rightEye.vOffset) / 2;
+
+  return {
+    h: avgH,
+    v: avgV,
+    leftRatio:  leftEye.ratio,
+    rightRatio: 1 - rightEye.ratio, // right eye mirrored
+    leftEye, rightEye,
+  };
+}
+
+// ══════════════════════════════════════════════════════════
+// DRAW EYE OVERLAYS
+// ══════════════════════════════════════════════════════════
+function drawEyeOverlay(pts, W, gazeResult) {
+  const { leftEye, rightEye } = gazeResult;
+  const score = gaze.score;
+  const col = score >= 75 ? '#22d47a' : score >= 50 ? '#f5a623' : '#f53d3d';
+
+  // Eye outline
+  [[36,37,38,39,40,41], [42,43,44,45,46,47]].forEach((idxs, ei) => {
+    eCtx.save();
+    eCtx.strokeStyle = col;
+    eCtx.lineWidth = 1.5;
+    eCtx.shadowColor = col;
+    eCtx.shadowBlur = 8;
+    eCtx.beginPath();
+    idxs.forEach((i, j) => {
+      const x = W - pts[i].x, y = pts[i].y;
+      j === 0 ? eCtx.moveTo(x, y) : eCtx.lineTo(x, y);
+    });
+    eCtx.closePath();
+    eCtx.stroke();
+    eCtx.restore();
+
+    // Iris approximation circle
+    const eye = ei === 0 ? leftEye : rightEye;
+    const irisR = eye.eyeH * 0.55;
+    const irisX = W - eye.irisX;
+    eCtx.save();
+    eCtx.strokeStyle = col;
+    eCtx.lineWidth = 1.2;
+    eCtx.setLineDash([3, 3]);
+    eCtx.shadowColor = col; eCtx.shadowBlur = 6;
+    eCtx.beginPath();
+    eCtx.arc(irisX, eye.irisY, irisR, 0, Math.PI * 2);
+    eCtx.stroke();
+    eCtx.setLineDash([]);
+    // Pupil dot
+    eCtx.fillStyle = col;
+    eCtx.shadowBlur = 10;
+    eCtx.beginPath();
+    eCtx.arc(irisX, eye.irisY, 3, 0, Math.PI * 2);
+    eCtx.fill();
+
+    // Corner brackets
+    const bx = W - eye.minX, by = eye.minY, bw = eye.eyeW, bh = eye.eyeH;
+    const bLen = 6;
+    eCtx.strokeStyle = col;
+    eCtx.lineWidth = 1.5; eCtx.shadowBlur = 0; eCtx.setLineDash([]);
+    [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([dx, dy]) => {
+      const ox = dx === -1 ? bx - bw : bx + bw * 0.02;
+      const oy = dy === -1 ? by - bh * 0.1 : by + bh * 1.1;
+      eCtx.beginPath();
+      eCtx.moveTo(ox, oy);
+      eCtx.lineTo(ox - dx * bLen, oy);
+      eCtx.moveTo(ox, oy);
+      eCtx.lineTo(ox, oy - dy * bLen);
+      eCtx.stroke();
+    });
+    eCtx.restore();
+  });
+
+  // Gaze vector arrow from nose
+  const noseX = W - pts[30].x, noseY = pts[30].y;
+  const arrowScale = 40;
+  const ax = gaze.hSmooth * arrowScale;
+  const ay = gaze.vSmooth * arrowScale;
+  eCtx.save();
+  eCtx.strokeStyle = col; eCtx.lineWidth = 2;
+  eCtx.shadowColor = col; eCtx.shadowBlur = 10;
+  eCtx.beginPath();
+  eCtx.moveTo(noseX, noseY);
+  eCtx.lineTo(noseX + ax, noseY + ay);
+  eCtx.stroke();
+  eCtx.beginPath();
+  eCtx.arc(noseX + ax, noseY + ay, 4, 0, Math.PI*2);
+  eCtx.fillStyle = col;
+  eCtx.fill();
+  eCtx.restore();
+
+  // Contact indicator
+  document.getElementById('contact-flash').className =
+    `contact-flash ${gaze.contact ? 'good' : 'bad'}`;
+}
+
+// ══════════════════════════════════════════════════════════
+// UI UPDATES
+// ══════════════════════════════════════════════════════════
+function updateScoreUI(score) {
+  const col = score >= 75 ? '#22d47a' : score >= 50 ? '#f5a623' : '#f53d3d';
+  const circ = 238.8;
+  const offset = circ - (score / 100) * circ;
+
+  // Panel ring
+  document.getElementById('ring-arc').style.strokeDashoffset = offset;
+  document.getElementById('ring-arc').style.stroke = col;
+  document.getElementById('ring-num').textContent = score;
+  document.getElementById('ring-num').style.color = col;
+
+  // Cam ring
+  const camCirc = 188.5;
+  document.getElementById('cam-ring-arc').style.strokeDashoffset = camCirc - (score/100)*camCirc;
+  document.getElementById('cam-ring-arc').style.stroke = col;
+  document.getElementById('cam-score-num').textContent = score;
+
+  // Score label
+  const label = score >= 85 ? 'Excellent contact' :
+                score >= 70 ? 'Good contact' :
+                score >= 55 ? 'Fair — keep trying' :
+                score >= 35 ? 'Losing contact' : 'No eye contact';
+  const desc  = score >= 70 ? 'Your gaze is well centred on the camera' :
+                score >= 50 ? 'Slight deviation detected — refocus' :
+                'Look directly at the camera lens';
+  document.getElementById('score-label').textContent = label;
+  document.getElementById('score-label').style.color = col;
+  document.getElementById('score-desc').textContent = desc;
+
+  // Header chip
+  document.getElementById('chip-score-txt').textContent = `Score: ${score}`;
+  document.getElementById('chip-score').style.color = col;
+
+  // Gaze status banner
+  const st = document.getElementById('gaze-status');
+  if (score >= 70) {
+    st.textContent = '✓ Eye contact maintained';
+    st.className = 'gaze-status show good';
+  } else if (score >= 45) {
+    st.textContent = '→ Slight deviation';
+    st.className = 'gaze-status show warn';
+  } else {
+    st.textContent = '✗ Look at the camera';
+    st.className = 'gaze-status show bad';
+  }
+}
+
+function updateGazeMeters(g) {
+  const hPct = (gaze.hSmooth + 1) / 2 * 100;
+  const vPct = (gaze.vSmooth + 1) / 2 * 100;
+  document.getElementById('gv-h').textContent = gaze.hSmooth.toFixed(2);
+  document.getElementById('gv-v').textContent = gaze.vSmooth.toFixed(2);
+  document.getElementById('gv-h-bar').style.width = `${hPct}%`;
+  document.getElementById('gv-v-bar').style.width = `${vPct}%`;
+
+  const plPct = g.leftRatio  * 100;
+  const prPct = g.rightRatio * 100;
+  document.getElementById('gv-pl').textContent = g.leftRatio.toFixed(2);
+  document.getElementById('gv-pr').textContent = g.rightRatio.toFixed(2);
+  document.getElementById('gv-pl-bar').style.width = `${plPct}%`;
+  document.getElementById('gv-pr-bar').style.width = `${prPct}%`;
+}
+
+// Streak and session
+let streakSec = 0;
+let streakTimer = null;
+let lastCoachScore = -1;
+let coachTimer = null;
+
+function updateSession() {
+  session.totalFrames++;
+  if (gaze.contact) session.contactFrames++;
+  session.scoreSum += gaze.score;
+  session.scoreCount++;
+  session.history.push(gaze.score);
+  if (session.history.length > 120) session.history.shift();
+
+  // Streak
+  if (gaze.contact) {
+    session.streak = (session.streak || 0) + (1/30); // approx 30fps
+    if (session.streak > session.bestStreak) session.bestStreak = session.streak;
+  } else {
+    session.streak = 0;
+  }
+
+  const avg = session.scoreCount > 0 ? Math.round(session.scoreSum / session.scoreCount) : 0;
+  const pct = session.totalFrames > 0 ? Math.round(session.contactFrames / session.totalFrames * 100) : 0;
+
+  document.getElementById('ss-avg').textContent = avg;
+  document.getElementById('ss-streak').textContent = `${Math.round(session.bestStreak)}s`;
+  document.getElementById('ss-pct').textContent = `${pct}%`;
+
+  // Streak bar (target: 30s)
+  const streakPct = Math.min(100, (session.streak / 30) * 100);
+  document.getElementById('streak-fill').style.width = `${streakPct}%`;
+  document.getElementById('streak-fill').style.background = streakPct > 66 ? 'var(--green)' : streakPct > 33 ? 'var(--amber)' : 'var(--red)';
+  document.getElementById('streak-val').textContent = `${Math.round(session.streak)}s`;
+
+  drawSparkline();
+  maybeCoach(gaze.score);
+}
+
+function drawSparkline() {
+  const W = sparkCvs.offsetWidth || 260, H = 44;
+  sparkCvs.width = W * devicePixelRatio; sparkCvs.height = H * devicePixelRatio;
+  spkCtx.scale(devicePixelRatio, devicePixelRatio);
+  spkCtx.clearRect(0, 0, W, H);
+
+  const hist = session.history;
+  if (hist.length < 2) return;
+
+  // Fill under
+  spkCtx.beginPath();
+  hist.forEach((v, i) => {
+    const x = (i / (hist.length-1)) * W;
+    const y = H - (v/100) * H * 0.85 - H * 0.05;
+    i === 0 ? spkCtx.moveTo(x, y) : spkCtx.lineTo(x, y);
+  });
+  spkCtx.lineTo(W, H); spkCtx.lineTo(0, H); spkCtx.closePath();
+  spkCtx.fillStyle = 'rgba(245,166,35,0.07)'; spkCtx.fill();
+
+  // Line
+  const grad = spkCtx.createLinearGradient(0, 0, W, 0);
+  grad.addColorStop(0, 'rgba(245,61,61,0.6)');
+  grad.addColorStop(0.5, 'rgba(245,166,35,0.8)');
+  grad.addColorStop(1, 'rgba(34,212,122,0.9)');
+  spkCtx.beginPath();
+  hist.forEach((v, i) => {
+    const x = (i / (hist.length-1)) * W;
+    const y = H - (v/100) * H * 0.85 - H * 0.05;
+    i === 0 ? spkCtx.moveTo(x, y) : spkCtx.lineTo(x, y);
+  });
+  spkCtx.strokeStyle = grad; spkCtx.lineWidth = 1.5; spkCtx.stroke();
+
+  // 70% guide
+  const guideY = H - 0.7 * H * 0.85 - H * 0.05;
+  spkCtx.setLineDash([2, 4]);
+  spkCtx.strokeStyle = 'rgba(34,212,122,0.2)'; spkCtx.lineWidth = 1;
+  spkCtx.beginPath(); spkCtx.moveTo(0, guideY); spkCtx.lineTo(W, guideY); spkCtx.stroke();
+  spkCtx.setLineDash([]);
+}
+
+// ── Coach messages ──────────────────────────────────────────────
+const MSGS = {
+  excellent:  { type:'good', icon:'✓', text:'Excellent eye contact! Hold this steady gaze — this is the target for presentations.' },
+  good:       { type:'good', icon:'✓', text:'Good contact maintained. Your gaze is well-centred on the camera lens.' },
+  slipping:   { type:'warn', icon:'→', text:'Your gaze is drifting. Imagine a dot right on the camera lens and focus there.' },
+  lost:       { type:'bad',  icon:'✗', text:'Eye contact lost. Return your gaze to the centre of the camera.' },
+  prolonged:  { type:'good', icon:'★', text:'Great sustained contact! You\'re building strong eye contact habits.' },
+};
+
+let lastMsgType = '';
+function maybeCoach(score) {
+  clearTimeout(coachTimer);
+  coachTimer = setTimeout(() => {
+    let type;
+    if (score >= 82) type = 'excellent';
+    else if (score >= 65) type = 'good';
+    else if (score >= 45) type = 'slipping';
+    else type = 'lost';
+
+    if (session.streak > 20 && type === 'good') type = 'prolonged';
+    if (type === lastMsgType) return;
+    lastMsgType = type;
+    addMsg(MSGS[type]);
+  }, 800);
+}
+
+function addMsg({ type, icon, text }) {
+  const list = document.getElementById('msg-list');
+  const no = list.querySelector('.no-msgs');
+  if (no) no.remove();
+  const el = document.createElement('div');
+  el.className = `msg-item ${type}`;
+  el.innerHTML = `<span class="mi-icon">${icon}</span><span class="mi-text">${text}</span>`;
+  list.prepend(el);
+  if (list.children.length > 8) list.lastChild.remove();
+}
+
+// ══════════════════════════════════════════════════════════
+// DRILL MODES
+// ══════════════════════════════════════════════════════════
+document.getElementById('drill-grid').addEventListener('click', e => {
+  const btn = e.target.closest('.drill-btn');
+  if (!btn) return;
+  document.querySelectorAll('.drill-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  cfg.drill = btn.dataset.drill;
+
+  if (cfg.drill !== 'free') {
+    startDrill(parseInt(cfg.drill));
+  } else {
+    stopDrill();
+  }
+});
+
+function startDrill(seconds) {
+  stopDrill();
+  // Reset session stats
+  session.scoreSum = 0; session.scoreCount = 0;
+  session.contactFrames = 0; session.totalFrames = 0;
+  session.streak = 0; session.bestStreak = 0;
+  session.history = [];
+  lastMsgType = '';
+
+  // Countdown
+  let count = 3;
+  const overlay = document.getElementById('drill-overlay');
+  const countEl = document.getElementById('drill-count');
+  overlay.classList.add('show');
+  countEl.textContent = count;
+
+  const countInterval = setInterval(() => {
+    count--;
+    if (count <= 0) {
+      clearInterval(countInterval);
+      overlay.classList.remove('show');
+      runDrill(seconds);
+    } else {
+      // Trigger re-animation by cloning
+      const newEl = countEl.cloneNode(true);
+      newEl.textContent = count;
+      countEl.parentNode.replaceChild(newEl, countEl);
+    }
+  }, 1000);
+}
+
+function runDrill(seconds) {
+  session.drillActive = true;
+  session.drillSec = seconds;
+
+  let remaining = seconds;
+  const overlay = document.getElementById('drill-overlay');
+  const countEl = document.getElementById('drill-count');
+
+  session.drillTimer = setInterval(() => {
+    remaining--;
+    if (remaining <= 0) {
+      stopDrill();
+      // Show result
+      overlay.classList.add('show');
+      const avg = session.scoreCount > 0 ? Math.round(session.scoreSum / session.scoreCount) : 0;
+      countEl.textContent = `${avg}`;
+      countEl.style.color = avg >= 70 ? '#22d47a' : avg >= 50 ? '#f5a623' : '#f53d3d';
+      addMsg({
+        type: avg >= 70 ? 'good' : avg >= 50 ? 'warn' : 'bad',
+        icon: '⊕',
+        text: `Drill complete! Average score: ${avg}/100. Best streak: ${Math.round(session.bestStreak)}s.`
+      });
+      setTimeout(() => { overlay.classList.remove('show'); countEl.style.color = ''; }, 3000);
+    } else {
+      const newEl = countEl.cloneNode(true);
+      newEl.textContent = remaining;
+      newEl.style.fontSize = remaining <= 5 ? 'clamp(3rem,10vw,6rem)' : '1.5rem';
+      countEl.parentNode.replaceChild(newEl, countEl);
+      overlay.classList.toggle('show', remaining <= 5 || remaining === seconds);
+    }
+  }, 1000);
+}
+
+function stopDrill() {
+  clearInterval(session.drillTimer);
+  session.drillActive = false;
+  document.getElementById('drill-overlay').classList.remove('show');
+}
+
+// ══════════════════════════════════════════════════════════
+// SETTINGS
+// ══════════════════════════════════════════════════════════
+document.getElementById('sl-tol').addEventListener('input', function() {
+  cfg.tolerance = +this.value;
+  document.getElementById('sv-tol').textContent = this.value;
+});
+document.getElementById('sl-sm').addEventListener('input', function() {
+  cfg.smoothing = +this.value;
+  document.getElementById('sv-sm').textContent = this.value;
+});
+
+// ══════════════════════════════════════════════════════════
+// BOOT
+// ══════════════════════════════════════════════════════════
+window.addEventListener('load', async () => {
+  try {
+    await initFaceApi();
+    await startCamera();
+    detLoop();
+  } catch(err) {
+    document.getElementById('loading').innerHTML = `
+      <div style="font-family:'Syne',sans-serif;font-size:1.8rem;font-weight:800;color:var(--amber);letter-spacing:0.2em">ERROR</div>
+      <div style="font-size:0.58rem;color:var(--muted);letter-spacing:0.12em;margin-top:0.5rem">${err.message}</div>
+      <div style="font-size:0.52rem;color:var(--muted);margin-top:0.4rem;letter-spacing:0.1em">Allow camera access and reload</div>`;
+  }
+});
+</script>
+</body>
+</html>
